@@ -1,0 +1,52 @@
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import Index from "./pages/Index";
+import Cases from "./pages/Cases";
+import TestCases from "./pages/TestCases";
+import OpenCases from "./pages/OpenCases";
+import ClosedCases from "./pages/ClosedCases";
+import PendingCases from "./pages/PendingCases";
+import SettlementCases from "./pages/SettlementCases";
+import Clients from "./pages/Clients";
+import Analytics from "./pages/Analytics";
+import Settings from "./pages/Settings";
+import NotFound from "./pages/NotFound";
+
+const queryClient = new QueryClient();
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/cases" element={<Cases />} />
+            <Route path="/cases/open" element={<OpenCases />} />
+            <Route path="/cases/closed" element={<ClosedCases />} />
+            <Route path="/cases/pending" element={<PendingCases />} />
+            <Route path="/cases/settlement" element={<SettlementCases />} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings" element={<Settings />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
+  </QueryClientProvider>
+);
+
+export default App;

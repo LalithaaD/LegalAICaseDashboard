@@ -1,0 +1,388 @@
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Users, Mail, Shield, Crown, Edit, Eye, Send, AlertTriangle, ExternalLink } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { emailService, TeamInviteData } from '@/services/emailService';
+import { useAppStore } from '@/store/useAppStore';
+
+interface TeamInviteModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+interface InviteData {
+  email: string;
+  role: string;
+  message: string;
+  permissions: string[];
+}
+
+const rolePermissions = {
+  'Admin': ['Manage users', 'View all cases', 'Edit all cases', 'Delete cases', 'System settings', 'Analytics'],
+  'Editor': ['View all cases', 'Edit assigned cases', 'Create cases', 'View clients'],
+  'Viewer': ['View assigned cases', 'View clients']
+};
+
+const roleDescriptions = {
+  'Admin': 'Full access to all features and settings',
+  'Editor': 'Can create and edit cases, view all data',
+  'Viewer': 'Read-only access to assigned cases'
+};
+
+export function TeamInviteModal({ open, onClose }: TeamInviteModalProps) {
+  const { profile } = useAppStore();
+  const [loading, setLoading] = useState(false);
+  const [inviteData, setInviteData] = useState<InviteData>({
+    email: '',
+    role: '',
+    message: '',
+    permissions: []
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleRoleChange = (role: string) => {
+    setInviteData(prev => ({
+      ...prev,
+      role,
+      permissions: rolePermissions[role as keyof typeof rolePermissions] || []
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setLoading(true);
+    setEmailStatus('sending');
+    setErrors({});
+
+    try {
+      // Validation
+      const newErrors: Record<string, string> = {};
+
+      if (!inviteData.email) {
+        newErrors.email = 'Email address is required';
+      } else if (!validateEmail(inviteData.email)) {
+        newErrors.email = 'Please enter a valid email address';
+      }
+
+      if (!inviteData.role) {
+        newErrors.role = 'Please select a role';
+      }
+
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        setLoading(false);
+        setEmailStatus('idle');
+        return;
+      }
+
+      // Prepare email data
+      const emailData: TeamInviteData = {
+        email: inviteData.email,
+        role: inviteData.role,
+        message: inviteData.message || `Welcome to our legal dashboard! You've been invited to join as a ${inviteData.role}.`,
+        inviterName: `${profile.firstName} ${profile.lastName}`,
+        inviterEmail: profile.email,
+        lawFirm: profile.lawFirm,
+        inviteLink: `${window.location.origin}/invite?token=${generateInviteToken()}`
+      };
+
+      // Send the actual email
+      const emailSent = await emailService.sendTeamInvite(emailData);
+
+      if (emailSent) {
+        setEmailStatus('sent');
+        
+        // Log email details to console
+        console.log('📧 Team Invitation Email Sent:');
+        console.log('To:', emailData.email);
+        console.log('Role:', emailData.role);
+        console.log('Message:', emailData.message);
+        console.log('Inviter:', emailData.inviterName);
+        console.log('Law Firm:', emailData.lawFirm);
+        console.log('Invite Link:', emailData.inviteLink);
+        
+        toast({
+          title: "Invitation Sent Successfully",
+          description: `Team member invitation sent to ${inviteData.email} with ${inviteData.role} role.`,
+        });
+
+        // Keep modal open to show success message
+        // Don't auto-close, let user close manually
+      } else {
+        setEmailStatus('error');
+        toast({
+          title: "Email Service Error",
+          description: "Failed to send invitation email. Please check console for details.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      setEmailStatus('error');
+      toast({
+        title: "Error",
+        description: "Failed to send invitation. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate a mock invite token (in real app, this would be generated by backend)
+  const generateInviteToken = () => {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  };
+
+  const handleClose = () => {
+    setInviteData({ email: '', role: '', message: '', permissions: [] });
+    setErrors({});
+    setEmailStatus('idle');
+    setLoading(false);
+    onClose();
+  };
+
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+      case 'Admin':
+        return <Crown className="h-4 w-4" />;
+      case 'Editor':
+        return <Edit className="h-4 w-4" />;
+      case 'Viewer':
+        return <Eye className="h-4 w-4" />;
+      default:
+        return <Users className="h-4 w-4" />;
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Invite Team Member
+          </DialogTitle>
+          <DialogDescription>
+            Send an invitation to a new team member to join your legal dashboard.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Email Service Status */}
+          {!emailService.isEmailConfigured() && (
+            <Alert className="border-yellow-200 bg-yellow-50">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Email Service Not Configured</p>
+                    <p className="text-sm text-muted-foreground">
+                      This will simulate sending an email. Check the browser console to see the email details.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href="https://www.emailjs.com/" target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Setup EmailJS
+                    </a>
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={inviteData.email}
+                  onChange={(e) => setInviteData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="colleague@lawfirm.com"
+                  className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
+                />
+              </div>
+              {errors.email && (
+                <p className="text-sm text-red-500">{errors.email}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Select value={inviteData.role} onValueChange={handleRoleChange}>
+                <SelectTrigger className={errors.role ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Admin">
+                    <div className="flex items-center gap-2">
+                      <Crown className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Admin</div>
+                        <div className="text-sm text-muted-foreground">Full access</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Editor">
+                    <div className="flex items-center gap-2">
+                      <Edit className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Editor</div>
+                        <div className="text-sm text-muted-foreground">Create and edit</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Viewer">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Viewer</div>
+                        <div className="text-sm text-muted-foreground">Read-only access</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.role && (
+                <p className="text-sm text-red-500">{errors.role}</p>
+              )}
+              {inviteData.role && (
+                <p className="text-sm text-muted-foreground">
+                  {roleDescriptions[inviteData.role as keyof typeof roleDescriptions]}
+                </p>
+              )}
+            </div>
+
+            {inviteData.role && (
+              <div className="space-y-2">
+                <Label>Permissions</Label>
+                <div className="grid grid-cols-1 gap-2">
+                  {inviteData.permissions.map((permission, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+                      <Shield className="h-4 w-4 text-green-600" />
+                      <span className="text-sm">{permission}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="message">Personal Message (Optional)</Label>
+              <Textarea
+                id="message"
+                value={inviteData.message}
+                onChange={(e) => setInviteData(prev => ({ ...prev, message: e.target.value }))}
+                placeholder="Welcome to our legal dashboard! We're excited to have you join our team..."
+                className="min-h-[100px]"
+              />
+              <p className="text-sm text-muted-foreground">
+                This message will be included in the invitation email.
+              </p>
+            </div>
+          </div>
+
+          {/* Success Message */}
+          {emailStatus === 'sent' && (
+            <Alert className="border-green-200 bg-green-50">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription>
+                <div>
+                  <p className="font-medium text-green-800">Invitation Sent Successfully!</p>
+                  <p className="text-sm text-green-700 mt-1">
+                    The invitation has been sent to {inviteData.email}. 
+                    They'll receive an email with instructions to join your team.
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Error Message */}
+          {emailStatus === 'error' && (
+            <Alert className="border-red-200 bg-red-50">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertDescription>
+                <div>
+                  <p className="font-medium text-red-800">Failed to Send Invitation</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    There was an error sending the invitation. Please check the console for details and try again.
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Info Message */}
+          {emailStatus === 'idle' && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                The invited user will receive an email with instructions to set up their account. 
+                They'll have 7 days to accept the invitation.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2">
+            {emailStatus === 'sent' ? (
+              <>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setInviteData({ email: '', role: '', message: '', permissions: [] });
+                    setEmailStatus('idle');
+                    setErrors({});
+                  }}
+                >
+                  Send Another
+                </Button>
+                <Button type="button" onClick={handleClose}>
+                  Close
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                      Sending Invitation...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Send Invitation
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
